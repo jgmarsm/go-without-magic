@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 
@@ -76,6 +78,14 @@ func run() error {
 
 	// ── 6. Servidor HTTP ───────────────────────────────────────────────
 	addr := fmt.Sprintf(":%d", cfg.Server.HTTPPort)
+
+	// Chequear que el puerto esté disponible ANTES de crear el servidor
+	// Esto nos da error temprano en lugar de una goroutine silenciosa
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("cannot bind to %s: %w", addr, err)
+	}
+
 	httpServer := &http.Server{
 		Addr:         addr,
 		Handler:      mux,
@@ -83,18 +93,30 @@ func run() error {
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
-	// Arrancar en goroutine para no bloquear el shutdown
+	// Canal para reportar errores del servidor
+	serverErrors := make(chan error, 1)
+
+	// Arrancar servidor HTTP en goroutine
+	// El listener ya está binding al puerto, así que no hay race condition
 	go func() {
 		logger.Info("HTTP server listening", zap.String("addr", addr))
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("HTTP server error", zap.Error(err))
-		}
+		// Usar Serve() en lugar de ListenAndServe() porque ya tenemos el listener
+		serverErrors <- httpServer.Serve(lis)
 	}()
 
 	// ── 7. Graceful Shutdown ───────────────────────────────────────────
-	shutdown.NewManager(cfg.Server.ShutdownTimeout, logger).
-		Register("http", httpServer).
-		Wait() // Bloquea hasta SIGINT / SIGTERM
+	shutdownMgr := shutdown.NewManager(cfg.Server.ShutdownTimeout, logger).
+		Register("http", httpServer)
+
+	// Iniciar el signal handler en goroutine (no bloquea)
+	go shutdownMgr.Wait()
+
+	// Esperar: error del servidor O finalización del shutdown
+	// Si el servidor falla al startup, retornamos el error inmediatamente
+	err = <-serverErrors
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("HTTP server error: %w", err)
+	}
 
 	return nil
 }

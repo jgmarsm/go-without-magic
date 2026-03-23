@@ -27,6 +27,28 @@ func NewUserRepository() *UserRepository {
 	}
 }
 
+// CreateIfNotExists verifica que el email no exista y crea de forma ATÓMICA.
+// - Si el email ya existe: retorna ErrUserDuplicated (SIN crear)
+// - Si no existe: crea el usuario en AMBOS índices (atómico)
+//
+// GARANTÍA DE CONCURRENCIA: Esta operación es thread-safe.
+// No hay ventana entre check y write.
+func (r *UserRepository) CreateIfNotExists(_ context.Context, user *domain.User) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Verificar duplicado - MIENTRAS TENEMOS EL LOCK
+	if _, exists := r.byEmail[user.Email]; exists {
+		return domain.ErrUserDuplicated
+	}
+
+	// Crear - MIENTRAS TENEMOS EL LOCK (operación atómica)
+	r.byID[user.ID.String()] = user
+	r.byEmail[user.Email] = user
+
+	return nil
+}
+
 func (r *UserRepository) Save(_ context.Context, user *domain.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

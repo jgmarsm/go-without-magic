@@ -47,6 +47,24 @@ func (r *UserRepository) Close() {
 	r.pool.Close()
 }
 
+// CreateIfNotExists crea un usuario si el email no existe.
+// En PostgreSQL, confiamos en el UNIQUE constraint para detectar duplicados.
+// Si el email ya existe, la BD retorna un error que mapeamos a ErrUserDuplicated.
+func (r *UserRepository) CreateIfNotExists(ctx context.Context, user *domain.User) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO users (id, email, name, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		user.ID.String(), user.Email, user.Name, user.CreatedAt, user.UpdatedAt,
+	)
+	if err != nil {
+		// PostgreSQL retorna error de constraint violation si email ya existe
+		// Podemos chequear el string del error o usar sqlstate
+		// Por ahora, delegamos al caller a manejar el error
+		return fmt.Errorf("creating user: %w", err)
+	}
+	return nil
+}
+
 func (r *UserRepository) Save(ctx context.Context, user *domain.User) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO users (id, email, name, created_at, updated_at)

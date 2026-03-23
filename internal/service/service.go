@@ -27,9 +27,12 @@ func NewUserService(repo domain.UserRepository, logger *zap.Logger) *UserService
 // CreateUser orquesta la creación de un usuario.
 //
 // Flujo:
-//  1. Validar y construir entidad (dominio)
-//  2. Verificar que el email no exista (regla de negocio)
-//  3. Persistir
+//  1. Construir entidad (valida invariantes del dominio)
+//  2. Persistir de forma atómica (check-then-act en repo)
+//
+// SEGURIDAD DE CONCURRENCIA:
+// Esta función es segura para ser llamada simultáneamente por múltiples goroutines.
+// La protección ocurre en repo.CreateIfNotExists() que es operación atómica.
 func (s *UserService) CreateUser(ctx context.Context, email, name string) (*domain.User, error) {
 	// Paso 1: el constructor valida las invariantes del dominio
 	user, err := domain.NewUser(email, name)
@@ -37,26 +40,19 @@ func (s *UserService) CreateUser(ctx context.Context, email, name string) (*doma
 		return nil, err // ErrInvalidEmail o ErrInvalidName
 	}
 
-	// Paso 2: verificar duplicado
-	existing, err := s.repo.FindByEmail(ctx, email)
-	switch {
-	case err == nil && existing != nil:
-		// Email ya existe → error de negocio
-		return nil, domain.ErrUserDuplicated
-	case errors.Is(err, domain.ErrUserNotFound):
-		// No existe → podemos continuar
-	case err != nil:
-		// Error técnico del repositorio
-		return nil, fmt.Errorf("checking existing user: %w", err)
-	}
-
-	// Paso 3: persistir
-	if err := s.repo.Save(ctx, user); err != nil {
-		s.logger.Error("failed to save user",
+	// Paso 2: persistir DE FORMA ATÓMICA (check + create en una sola operación)
+	// CreateIfNotExists maneja la verificación de duplicados SIN ventanas de race condition
+	if err := s.repo.CreateIfNotExists(ctx, user); err != nil {
+		if errors.Is(err, domain.ErrUserDuplicated) {
+			// Email ya existe - error de negocio esperado
+			return nil, err
+		}
+		// Error técnico
+		s.logger.Error("failed to create user",
 			zap.String("email", email),
 			zap.Error(err),
 		)
-		return nil, fmt.Errorf("saving user: %w", err)
+		return nil, fmt.Errorf("creating user: %w", err)
 	}
 
 	s.logger.Info("user created",
