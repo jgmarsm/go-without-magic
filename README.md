@@ -198,7 +198,165 @@ This microservice is **production-grade** and thoroughly tested for concurrent w
 
 For detailed analysis of concurrency safety, see [CONCURRENCY_AUDIT.md](CONCURRENCY_AUDIT.md).  
 For deployment checklist, see [DEPLOYMENT_READY.md](DEPLOYMENT_READY.md).
+## 📊 Comparison with Popular Go Frameworks
 
+**Go Without Magic** is designed as a minimal, explicit template focused on Clean Architecture principles. Here's how it compares to popular Go microservice frameworks:
+
+### Quick Comparison Table
+
+| Aspect | Go Without Magic | [GoKit](https://gokit.io) | [Kratos](https://go-kratos.dev) | [Go-Zero](https://go-zero.dev) |
+|--------|------------------|----------------------|------------------------------|--------------------------|
+| **Type** | Clean Architecture Template | Microservices Toolkit | Full Framework | Code Generation Framework |
+| **Philosophy** | Explicit, minimal, no magic | Flexible, lightly opinionated | Structured, batteries included | Productivity-first with generation |
+| **Setup Time** | ~5 min (clone & run) | ~10-15 min (integrate toolkit) | ~10 min (CLI) | ~5 min (code generation) |
+| **HTTP Support** | ✅ Native (std lib) | ✅ Yes (pluggable) | ✅ Yes | ✅ Yes (optimized) |
+| **gRPC Support** | ❌ No | ✅ Yes (pluggable) | ✅ Yes (out-of-box) | ✅ Yes |
+| **Code Generation** | ❌ Manual | ❌ No | ❌ No | ✅ Yes (goctl) |
+| **Built-in Resilience** | ❌ No (DIY) | ✅ Yes | ✅ Yes | ✅ Yes (circuit breaker, rate limiting) |
+| **Middleware Support** | ✅ Yes (HTTP handlers) | ✅ Yes | ✅ Yes (plug-able) | ✅ Yes |
+| **Built-in Observability** | ⚠️ Partial (logging only) | ⚠️ Minimal | ✅ Yes (tracing, metrics, logs) | ✅ Yes |
+| **Database Abstraction** | ✅ Repository pattern | ✅ Flexible | ✅ Yes | ✅ Yes |
+| **Production Ready** | ✅ Yes (race-tested) | ✅ Yes | ✅ Yes | ✅ Yes (battle-tested) |
+| **Learning Curve** | 📈 Low | 📈 Medium | 📈 Medium | 📈 Low - High (depends on generation) |
+| **Flexibility** | 🎯 Very High | 🎯 Very High | 🎯 Medium | 🎯 Medium (opinionated) |
+| **Boilerplate** | 📝 Moderate | 📝 High | 📝 Low | 📝 Very Low |
+| **Maturity** | ✨ New | ✨ Stable (2014+) | ✨ Stable (2020+) | ✨ Stable (2021+, widely used) |
+
+### Detailed Analysis
+
+#### **Go Without Magic** - This Template
+**Best For:** Learning clean architecture, building MVPs, teams that prefer explicit patterns over magic
+
+```go
+// You see exactly what's happening - no hidden magic
+userService := service.NewUserService(userRepo, logger)
+handler.NewUserHandler(userService).Register(mux)
+```
+
+**Strengths:**
+- ✅ Minimal dependencies (just std lib + essentials)
+- ✅ Crystal-clear code flow and architecture
+- ✅ Perfect for learning Go architecture patterns
+- ✅ Full control over every component
+- ✅ Highly testable and debuggable
+- ✅ Production-grade concurrency safety (verified)
+
+**Trade-offs:**
+- ❌ No code generation (more boilerplate for CRUD operations)
+- ❌ You implement middleware/resilience patterns yourself
+- ❌ No built-in circuit breakers or rate limiting
+- ❌ Single responsibility: HTTP only (no built-in gRPC)
+
+---
+
+#### **[GoKit](https://gokit.io/)** - Flexible Toolkit
+**Best For:** Teams building complex microservices who want maximum flexibility
+
+```go
+// Compose what you need
+var svc MyService = &myService{}
+svc = NewLoggingMiddleware()(svc)
+svc = NewCircuitBreakerMiddleware()(svc)
+```
+
+**Strengths:**
+- ✅ "Few opinions, lightly held" - extreme flexibility
+- ✅ Excellent middleware/interceptor system
+- ✅ No framework lock-in
+- ✅ Works well with existing codebases
+- ✅ Strong community (since 2014)
+
+**Trade-offs:**
+- ❌ Requires more manual integration
+- ❌ Steeper learning curve for beginners
+- ❌ More setup code needed
+- ❌ No code generation
+- ❌ No built-in runtime features
+
+---
+
+#### **[Kratos](https://go-kratos.dev/)** - Full-Featured Framework
+**Best For:** Teams building production microservices at scale with need for all-in-one solution
+
+```go
+app := kratos.New(
+    kratos.Name("user-service"),
+    kratos.Server(httpSrv, grpcSrv),
+)
+app.Run()
+```
+
+**Strengths:**
+- ✅ HTTP + gRPC support out-of-the-box
+- ✅ Built-in observability (tracing, metrics, logs)
+- ✅ Plug-able middleware architecture
+- ✅ Protobuf-first API design
+- ✅ Production-ready starter kit
+- ✅ Strong enterprise support
+
+**Trade-offs:**
+- ❌ More opinionated (less flexibility)
+- ❌ Heavier dependency footprint
+- ❌ Steeper learning curve
+- ❌ Over-engineered for simple APIs
+
+---
+
+#### **[Go-Zero](https://go-zero.dev/)** - Code Generation First
+**Best For:** Rapid development, teams that want less boilerplate, productivity-focused teams
+
+```bash
+goctl api go -api user.api -dir .
+# Generates: http server, validation, middleware, error handling
+```
+
+**Strengths:**
+- ✅ Massive reduction in boilerplate code
+- ✅ Fast time-to-value for new services
+- ✅ Built-in resilience (circuit breaker, rate limiting)
+- ✅ High-performance router (zero-allocation)
+- ✅ Battle-tested in production (thousands of companies)
+- ✅ Excellent documentation
+- ✅ Auto-generates OpenAPI specs
+
+**Trade-offs:**
+- ❌ Opinionated structure (less flexibility)
+- ❌ Magic code generation (harder to customize)
+- ❌ Lock-in to the framework
+- ❌ Requires learning goctl DSL
+
+---
+
+### Decision Matrix
+
+Choose **Go Without Magic** if you:
+- 🎓 Want to learn Go architecture patterns
+- 🎯 Value explicitness over convenience
+- 🚀 Building an MVP or small service
+- 👨‍💻 Prefer understanding every line of code
+- 🔧 Want maximum customization
+
+Choose **GoKit** if you:
+- 🎯 Need extreme flexibility
+- 🔌 Have complex service-to-service patterns
+- 👥 Prefer library composition
+- 🏢 Integrating with existing systems
+
+Choose **Kratos** if you:
+- 🚀 Building enterprise microservices
+- 📡 Need gRPC + HTTP simultaneously
+- 📊 Want built-in observability
+- 🛡️ Need comprehensive middleware system
+- 🏢 Operating at scale
+
+Choose **Go-Zero** if you:
+- ⚡ Want to ship fast with minimal boilerplate
+- 📝 Like code generation workflows
+- 🎯 Building CRUD-heavy services
+- 📊 Want built-in resilience patterns
+- 💰 Prioritize developer productivity
+
+---
 ## �🔄 CI/CD
 
 GitHub Actions workflows under `.github/workflows/` provide:
