@@ -1,0 +1,100 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+
+	"go.uber.org/zap"
+
+	"github.com/JoX23/go-without-magic/internal/config"
+	httphandler "github.com/JoX23/go-without-magic/internal/handler/http"
+	"github.com/JoX23/go-without-magic/internal/observability"
+	"github.com/JoX23/go-without-magic/internal/repository/memory"
+	"github.com/JoX23/go-without-magic/internal/service"
+	"github.com/JoX23/go-without-magic/pkg/health"
+	"github.com/JoX23/go-without-magic/pkg/shutdown"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "fatal error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// run separa la lógica de main para poder retornar errores
+// y testear el arranque sin llamar a os.Exit directamente.
+func run() error {
+	// ── 1. Configuración ───────────────────────────────────────────────
+	cfg, err := config.Load("internal/config/config.yaml")
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// ── 2. Logger ─────────────────────────────────────────────────────
+	logger, err := observability.NewLogger(
+		cfg.Observability.LogLevel,
+		cfg.Service.Environment,
+	)
+	if err != nil {
+		return fmt.Errorf("creating logger: %w", err)
+	}
+	defer logger.Sync() //nolint:errcheck
+
+	logger.Info("starting service",
+		zap.String("name", cfg.Service.Name),
+		zap.String("version", cfg.Service.Version),
+		zap.String("environment", cfg.Service.Environment),
+	)
+
+	// ── 3. Repositorio ─────────────────────────────────────────────────
+	// En local usamos memoria; para producción cambia por postgres.New(cfg.Database)
+	repo := memory.NewUserRepository()
+
+	// Para usar PostgreSQL real, reemplaza las líneas anteriores por:
+	// repo, err := postgres.New(cfg.Database)
+	// if err != nil {
+	//     return fmt.Errorf("connecting to database: %w", err)
+	// }
+	// defer repo.Close()
+
+	// ── 4. Capa de servicio ────────────────────────────────────────────
+	userSvc := service.NewUserService(repo, logger)
+
+	// ── 5. HTTP Handler ────────────────────────────────────────────────
+	userHandler := httphandler.NewUserHandler(userSvc, logger)
+
+	mux := http.NewServeMux()
+
+	// Rutas de negocio
+	userHandler.RegisterRoutes(mux)
+
+	// Rutas de infraestructura
+	// Sin checkers reales en modo memoria — agregar repo cuando uses postgres
+	mux.Handle("/healthz", health.NewHandler())
+
+	// ── 6. Servidor HTTP ───────────────────────────────────────────────
+	addr := fmt.Sprintf(":%d", cfg.Server.HTTPPort)
+	httpServer := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+	}
+
+	// Arrancar en goroutine para no bloquear el shutdown
+	go func() {
+		logger.Info("HTTP server listening", zap.String("addr", addr))
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("HTTP server error", zap.Error(err))
+		}
+	}()
+
+	// ── 7. Graceful Shutdown ───────────────────────────────────────────
+	shutdown.NewManager(cfg.Server.ShutdownTimeout, logger).
+		Register("http", httpServer).
+		Wait() // Bloquea hasta SIGINT / SIGTERM
+
+	return nil
+}
